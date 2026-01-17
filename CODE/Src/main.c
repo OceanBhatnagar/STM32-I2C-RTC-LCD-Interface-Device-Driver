@@ -22,7 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include<stdio.h>
-#include<rtc.h>
+#include<string.h>
+#include "rtc.h"
 #include<lcd.h>
 /* USER CODE END Includes */
 
@@ -44,34 +45,35 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c2;
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_I2C2_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
-extern void initialise_monitor_handles(void);
 
 
+/* USER CODE BEGIN PFP */
 char *get_day(uint8_t i){
-	char* days[]={"Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"};
-	return days[i-1];
+    static char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    if(i < 1 || i > 7) return "Err";
+    return days[i-1];
 }
-void number_string(uint8_t num, char* buff){
-	if(num<10){
-		buff[0]='0';
-		buff[1]=num+48;
-	}
-	else if(num>=10 && num<99){
-		buff[0]=(num/10)+48;
-		buff[1]=(num%10)+48;
 
-	}
+void number_string(uint8_t num, char* buff){
+    if(num < 10){
+        buff[0] = '0';
+        buff[1] = num + '0';
+    }
+    else if(num >= 10 && num <= 99){
+        buff[0] = (num / 10) + '0';
+        buff[1] = (num % 10) + '0';
+    }
+    else {
+        // Handle Error values (like 255 from I2C failure)
+        buff[0] = 'E';
+        buff[1] = 'R';
+    }
 }
 //hh:mm:ss
 char* time_to_string(RTC_time_t *rtc_time){
@@ -100,101 +102,67 @@ char* date_to_string(RTC_date_t *rtc_date){
 }
 /* USER CODE END PFP */
 
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
 int main(void)
 {
-
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
   /* MCU Configuration--------------------------------------------------------*/
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_I2C1_Init();
+    MX_I2C2_Init();
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    // 2. NOW you can initialize the devices
+    lcd_init();
 
-  /* USER CODE BEGIN Init */
+    /* Initialize RTC */
+      ds1307_init();
 
-  /* USER CODE END Init */
+      /* Variables for RTC */
+      RTC_date_t current_date; // Renamed from check_date for clarity in loop
+      RTC_time_t current_time;
 
-  /* Configure the system clock */
-  SystemClock_Config();
+      /* Power Loss / Reset Detection */
+            ds1307_get_current_date(&current_date);
 
-  /* USER CODE BEGIN SysInit */
+           
+            if (current_date.year == 0) {
+                lcd_clear();
+                lcd_send_string("Setting Time...");
+                HAL_Delay(1000);
 
-  /* USER CODE END SysInit */
+                RTC_time_t default_time = {
+                    .seconds = 0, .minutes = 30, .hours = 12, .time_format = TIME_FORMAT_24HRS
+                };
+                RTC_date_t default_date = {
+                    .day = 6, .date = 16, .month = 1, .year = 26
+                };
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_I2C2_Init();
-  MX_I2C1_Init();
-  /* USER CODE BEGIN 2 */
-  RTC_time_t current_time;
-  RTC_date_t current_date;
+                ds1307_set_current_time(&default_time);
+                ds1307_set_current_date(&default_date);
+                lcd_clear();
+            }
 
-  	  lcd_init();
-  	  if(ds1307_init()){
-  		 	 // printf("RTC Init has failed\n");
-  		 	  while(1);
-  		   }
-          current_date.day=DAY_FORMAT_FRIDAY;
-          current_date.date=15;
-          current_date.month=3;
-  		  current_date.year=21;
+      /* Infinite loop */
+      while (1)
+      {
+//    	  // 1. Get Time
+    	        ds1307_get_current_time(&current_time);
+    	        ds1307_get_current_date(&current_date);
 
-  		  current_time.hours=4;
-  		  current_time.minutes=25;
-  		  current_time.seconds=41;
-  	      current_time.time_format=TIME_FORMAT_12HRS_PM;
-  	    ds1307_set_current_date(&current_date);
-  	    ds1307_set_current_time(&current_time);
-  	  ds1307_get_current_date(&current_date);
-  	    ds1307_get_current_time(&current_time);
-  /* USER CODE END 2 */
+    	        // 2. Display Time
+    	        lcd_put_cursor(0, 0);
+    	        lcd_send_string("Time: ");
+    	        lcd_send_string(time_to_string(&current_time));
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
+    	        // 3. Display Date
+    	        lcd_put_cursor(1, 0);
+    	        lcd_send_string("Date: ");
+    	        lcd_send_string(date_to_string(&current_date));
 
-    /* USER CODE BEGIN 3 */
-	  ds1307_get_current_date(&current_date);
-	  ds1307_get_current_time(&current_time);
-	   lcd_clear();
-	   lcd_display_return_home();
-	   // Display time
-	      lcd_put_cursor(0,0);
-	      lcd_send_string("TIME:");
-	      lcd_put_cursor(7, 0);
-	      lcd_send_string(time_to_string(&current_time));
+    	        HAL_Delay(1000);
 
-	      if (current_time.time_format != TIME_FORMAT_24HRS)
-	      {
-	          char *am_pm = (current_time.time_format) ? "PM" : "AM";
-	          lcd_put_cursor(0, 10); // Display AM/PM in corner
-	          lcd_send_string(am_pm);
-	      }
-
-	      // Display date
-	      lcd_put_cursor(1, 0);
-	      lcd_send_string("DATE:");
-	      lcd_put_cursor(1,5);
-	      lcd_send_string(date_to_string(&current_date));
-
-	      HAL_Delay(1000);
-  }
-  /* USER CODE END 3 */
-}
-
+      }
+    }
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -276,21 +244,16 @@ static void MX_I2C1_Init(void)
 
 }
 
-/**
-  * @brief I2C2 Initialization Function
-  * @param None
-  * @retval None
-  */
 static void MX_I2C2_Init(void)
 {
 
-  /* USER CODE BEGIN I2C2_Init 0 */
+  /* USER CODE BEGIN I2C1_Init 0 */
 
-  /* USER CODE END I2C2_Init 0 */
+  /* USER CODE END I2C1_Init 0 */
 
-  /* USER CODE BEGIN I2C2_Init 1 */
+  /* USER CODE BEGIN I2C1_Init 1 */
 
-  /* USER CODE END I2C2_Init 1 */
+  /* USER CODE END I2C1_Init 1 */
   hi2c2.Instance = I2C2;
   hi2c2.Init.ClockSpeed = 100000;
   hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
@@ -304,9 +267,9 @@ static void MX_I2C2_Init(void)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN I2C2_Init 2 */
+  /* USER CODE BEGIN I2C1_Init 2 */
 
-  /* USER CODE END I2C2_Init 2 */
+  /* USER CODE END I2C1_Init 2 */
 
 }
 
@@ -355,14 +318,6 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
-/* USER CODE BEGIN 4 */
-
-/* USER CODE END 4 */
-
-/**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
